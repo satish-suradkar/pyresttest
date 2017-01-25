@@ -1,6 +1,6 @@
 import os
 import sys
-
+import pdb
 import parsing
 from parsing import *
 
@@ -93,7 +93,7 @@ class ContentHandler:
             or something
 
         """
-
+        
         # Tread carefully, this one is a bit narly because of nesting
         output = ContentHandler()
         is_template_path = False
@@ -113,10 +113,12 @@ class ContentHandler:
                     "Content must be a string, dictionary, or list of dictionaries")
 
             is_done = True
-
+            #pdb.set_trace()
             # Dictionary or list of dictionaries
             flat = lowercase_keys(flatten_dictionaries(node))
+            #pdb.set_trace()
             for key, value in flat.items():
+                #pdb.set_trace()
                 if key == u'template':
                     if isinstance(value, basestring):
                         if is_file:

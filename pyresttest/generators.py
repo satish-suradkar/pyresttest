@@ -3,6 +3,7 @@ import string
 import os
 import logging
 import sys
+import pdb
 
 import parsing
 from parsing import flatten_dictionaries, lowercase_keys, safe_to_bool
@@ -226,7 +227,7 @@ def parse_generator(configuration):
 
     configuration = lowercase_keys(flatten_dictionaries(configuration))
     gen_type = str(configuration.get(u'type')).lower()
-
+    #pdb.set_trace()
     if gen_type not in GENERATOR_TYPES:
         raise ValueError(
             'Generator type given {0} is not valid '.format(gen_type))

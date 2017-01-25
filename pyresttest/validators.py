@@ -6,6 +6,7 @@ import string
 import os
 import re
 import sys
+import pdb
 
 # Local module imports
 import parsing
@@ -180,6 +181,7 @@ class AbstractExtractor(object):
 
     def extract(self, body=None, headers=None, context=None):
         """ Extract data """
+        
         query = self.templated_query(context=context)
         args = self.args
         return self.extract_internal(query=query, body=body, headers=headers, args=self.args)
@@ -353,6 +355,7 @@ class ComparatorValidator(AbstractValidator):
         return os.linesep.join(string_frags)
 
     def validate(self, body=None, headers=None, context=None):
+        
         try:
             extracted_val = self.extractor.extract(
                 body=body, headers=headers, context=context)
@@ -400,6 +403,7 @@ class ComparatorValidator(AbstractValidator):
                 expected: 'myValue'
               }
         """
+        
 
         output = ComparatorValidator()
         config = parsing.lowercase_keys(parsing.flatten_dictionaries(config))
@@ -409,7 +413,7 @@ class ComparatorValidator(AbstractValidator):
         output.extractor = _get_extractor(config)
 
         if output.extractor is None:
-            raise ValueError(
+            raise ValueErrors(
                 "Extract function for comparison is not valid or not found!")
 
         if 'comparator' not in config:  # Equals comparator if unspecified
@@ -428,7 +432,7 @@ class ComparatorValidator(AbstractValidator):
 
         # Expected value can be another extractor query, or a single value, or
         # a templated value
-
+        
         if isinstance(expected, basestring) or isinstance(expected, (int, long, float, complex)):
             output.expected = expected
         elif isinstance(expected, dict):
@@ -502,6 +506,7 @@ def parse_extractor(extractor_type, config):
             - An extraction function (wrapped in an Extractor instance with configs and returned)
             - OR a a full Extractor instance (configured)
     """
+    
     parse = EXTRACTORS.get(extractor_type.lower())
     if not parse:
         raise ValueError(

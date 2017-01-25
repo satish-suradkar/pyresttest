@@ -1,7 +1,7 @@
 import unittest
 from . import binding
 from .binding import Context
-
+import pdb
 
 def count_gen():  # Generator that counts up from 1
     val = 1
@@ -31,6 +31,7 @@ class BindingTest(unittest.TestCase):
         self.assertEqual(2, context.mod_count)
 
     def test_generator(self):
+        pdb.set_trace()
         """ Test adding a generator """
         context = Context()
         self.assertEqual(0, len(context.get_generators()))
@@ -42,6 +43,7 @@ class BindingTest(unittest.TestCase):
         self.assertTrue(context.get_generator('gen') is not None)
 
     def test_generator_bind(self):
+        pdb.set_trace()
         """ Test generator setting to variables """
         context = Context()
         self.assertEqual(0, len(context.get_generators()))
