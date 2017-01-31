@@ -13,6 +13,17 @@ from optparse import OptionParser
 from email import message_from_string  # For headers handling
 import time
 from collections import defaultdict
+import json
+import string
+import collections
+import ast
+from copy import deepcopy
+
+deferr_flag=True
+params_flag=0
+is_retried = False #flag to check test is already retried
+
+
 
 try:
     from cStringIO import StringIO as MyIO
@@ -40,7 +51,6 @@ if __name__ == '__main__':
     import tests
     from generators import parse_generator
     from parsing import flatten_dictionaries, lowercase_keys, safe_to_bool, safe_to_json
-
     from validators import Failure
     from tests import Test, DEFAULT_TIMEOUT
     from benchmarks import Benchmark, AGGREGATES, METRICS, parse_benchmark
@@ -114,9 +124,9 @@ class TestConfig:
     test_parallel = False  # Allow parallel execution of tests in a test set, for speed?
     interactive = False
     verbose = False
-    ssl_insecure = False
+    ssl_insecure = True
     skip_term_colors = False  # Turn off output term colors
-
+    deferred=True
     # Binding and creation of generators
     variable_binds = None
     generators = None  # Map of generator name to generator functionOB
@@ -208,36 +218,42 @@ def parse_headers(header_string):
         return [(k.lower(), v) for k, v in header_msg.items()]
 
 
-def parse_testsets(base_url, test_structure, test_files=set(), working_directory=None, vars=None):
-    """ Convert a Python data structure read from validated YAML to a set of structured testsets
-    The data structure is assumed to be a list of dictionaries, each of which describes:
-        - a tests (test structure)
-        - a simple test (just a URL, and a minimal test is created)
-        - or overall test configuration for this testset
-        - an import (load another set of tests into this one, from a separate file)
-            - For imports, these are recursive, and will use the parent config if none is present
-
-    Note: test_files is used to track tests that import other tests, to avoid recursive loops
-
-    This returns a list of testsets, corresponding to imported testsets and in-line multi-document sets
-    """
-
+def parse_testsets_included(base_url, test_structure, test_files=set(), working_directory=None, vars=None):
+    """ parse all the testcases present in the included files and stores in list """ 
     tests_out = list()
     test_config = TestConfig()
     testsets = list()
     benchmarks = list()
-
+    testsets_included=list()
+    include_set=set()
+    
     if working_directory is None:
         working_directory = os.path.abspath(os.getcwd())
-
+        
+   
     if vars and isinstance(vars, dict):
         test_config.variable_binds = vars
-
+    
     # returns a testconfig and collection of tests
     for node in test_structure:  # Iterate through lists of test and configuration elements
+    	
         if isinstance(node, dict):  # Each config element is a miniature key-value dictionary
+	    
             node = lowercase_keys(node)
             for key in node:
+                
+                if key == u'includes': # incllude another file
+                    included_file_list = node[key]
+                    for file in included_file_list:
+                        
+                        if file not in test_files:
+                            logger.debug("Including supplementary yaml files : " +file)
+                            include_set.add(file)
+                            import_test_structure = read_test_file(working_directory+"/"+file)
+                            included_testsets = parse_testsets(
+                                            base_url, import_test_structure, test_files, vars=vars)
+                            testsets.extend(included_testsets)  
+
                 if key == u'import':
                     importfile = node[key]  # import another file
                     if importfile not in test_files:
@@ -255,33 +271,183 @@ def parse_testsets(base_url, test_structure, test_files=set(), working_directory
                     mytest.url = base_url + val
                     tests_out.append(mytest)
                 elif key == u'test':  # Complex test with additional parameters
-                    with cd(working_directory):
-                        child = node[key]
-                        mytest = Test.parse_test(base_url, child)
-                        tests_out.append(mytest)
+                    child = node[key]
+                    mytest = Test.parse_test(base_url, child)
+                    tests_out.append(mytest)
                 elif key == u'benchmark':
                     benchmark = parse_benchmark(base_url, node[key])
                     benchmarks.append(benchmark)
                 elif key == u'config' or key == u'configuration':
-                    test_config = parse_configuration(
-                        node[key], base_config=test_config)
-
+                    
+                    if(deferr_flag==False):
+                        test_config.append(parse_configuration(
+                           node[key], base_config=test_config))
+                    
+            
+    
     testset = TestSet()
-    testset.tests = tests_out
+    testset.tests = tests_out 
     testset.config = test_config
-    testset.benchmarks = benchmarks
+    testset.benchmarks = benchmarks 
     testsets.append(testset)
+
+    return testsets
+
+final_success = 0
+final_fail = 0
+
+
+
+def unique_name_check(testsets):
+    """ It checks for redundant test case name in testsets if found returns False else returns True"""
+    list_names=list()
+    redundant_flag=True
+    for index1 in range(len(testsets)):
+        for index2 in range(len(testsets[index1].tests)):
+            list_names.append(testsets[index1].tests[index2].name)
+    
+    for item,count in collections.Counter(list_names).items():
+        if(count > 1):
+            print("test case "+item+" is repeated more than once")
+            return False
+
+    return True
+    
+
+def parse_testsets(base_url, test_structure, test_files=set(), working_directory=None, vars=None):
+    """ Convert a Python data structure read from validated YAML to a set of structured testsets
+    The data structure is assumed to be a list of dictionaries, each of which describes:
+        - a tests (test structure)
+        - a simple test (just a URL, and a minimal test is created)
+        - or overall test configuration for this testset
+        - an import (load another set of tests into this one, from a separate file)
+            - For imports, these are recursive, and will use the parent config if none is present
+
+    Note: test_files is used to track tests that import other tests, to avoid recursive loops
+
+    This returns a list of testsets, corresponding to imported testsets and in-line multi-document sets
+    """
+    workflow_success = 0
+    workflow_fail = 0
+    global final_success
+    global final_fail
+    tests_out = list()
+    test_config = TestConfig()
+    testsets = list()
+    benchmarks = list()
+    testsets_included=list()
+    include_set=set()
+   
+    
+    if working_directory is None:
+        working_directory = os.path.abspath(os.getcwd())
+        
+    if vars and isinstance(vars, dict):
+        test_config.variable_binds = vars
+    
+    
+    # returns a testconfig and collection of tests
+    parse_order = [u'config',u'benchmark',u'import',u'includes',u'workflow',u'url',u'test']
+    for ord in parse_order:
+        for node in test_structure:  # Iterate through lists of test and configuration elements
+    	    if(ord == node.keys()[0]):
+                if isinstance(node, dict):  # Each config element is a miniature key-value dictionary
+	    
+                    node = lowercase_keys(node)
+                    
+                    for key in node:
+                        if key == u'includes':
+                            included_file_list = node[key]
+                            for file in included_file_list:
+                                if file not in test_files:
+                                    logger.debug("Including supplementary yaml files : " +file)
+                                    include_set.add(file)
+                                    
+                                    import_test_structure = read_test_file(working_directory+"/"+file)
+                                    included_testsets = parse_testsets(
+                                            base_url, import_test_structure, test_files,working_directory, vars=vars)
+                                    
+                                    testsets.extend(included_testsets)
+                            continue   
+                            
+                           
+                        if key == u'workflow':  # Workflow containing set of test cases in given order
+                            
+                            if(unique_name_check(testsets) == False):
+                                raise Exception("Redundant Test Case Found")
+                            child = node[key]
+                            
+                            myworkflow = WorkFlow.parse_workflow(base_url, child,global_gen=test_config.generators)
+                                                    
+                            if(deferr_flag==True): 
+                               workflow_flag = run_include_testsets(testsets,myworkflow,test_config.generators,working_directory=working_directory)
+                            
+                            if(workflow_flag == True):
+                                workflow_success = workflow_success+1
+                            else:
+   			        workflow_fail = workflow_fail+ 1	  
+			    continue   	  
+					                    
+                    
+
+                        if key == u'import':   # import another file
+                            importfile = node[key] 
+                            if importfile not in test_files:
+                                logger.debug("Importing test sets: " + importfile)
+                                test_files.add(importfile)
+                                import_test_structure = read_test_file(importfile)
+                                with cd(os.path.dirname(os.path.realpath(importfile))):
+                                    import_testsets = parse_testsets(
+                                         base_url, import_test_structure, test_files, vars=vars)
+                                    testsets.extend(import_testsets)
+                            continue
+
+                        if key == u'url':  # Simple test, just a GET to a URL
+                            mytest = Test()
+                            val = node[key]
+                            assert isinstance(val, basestring)
+                    	    mytest.url = base_url + val
+                    	    tests_out.append(mytest)
+                            continue
+
+                        if key == u'test':  # Complex test with additional parameters
+                            child = node[key]
+                            mytest = Test.parse_test(base_url, child)
+                            tests_out.append(mytest)
+                            continue
+
+                        if key == u'benchmark':
+                            benchmark = parse_benchmark(base_url, node[key])
+                            benchmarks.append(benchmark)
+ 			    continue
+
+                        if key == u'config' or key == u'configuration':
+                            test_config = parse_configuration(
+                                          node[key], base_config=test_config ,working_directory=working_directory)
+                            deferr_flag=test_config.deferred
+   			    continue
+    
+    final_success = workflow_success
+    final_fail = workflow_fail
+    testset = TestSet()
+    testset.tests = tests_out 
+    testset.config = test_config
+    testset.benchmarks = benchmarks 
+    testsets.append(testset)
+    
     return testsets
 
 
-def parse_configuration(node, base_config=None):
+
+def parse_configuration(node, base_config=None , working_directory=None):
     """ Parse input config to configuration information """
+    
     test_config = base_config
     if not test_config:
         test_config = TestConfig()
-
+    
     node = lowercase_keys(flatten_dictionaries(node))  # Make it usable
-
+    
     for key, value in node.items():
         if key == u'timeout':
             test_config.timeout = int(value)
@@ -299,10 +465,15 @@ def parse_configuration(node, base_config=None):
             flat = flatten_dictionaries(value)
             gen_map = dict()
             for generator_name, generator_config in flat.items():
+                temp = generator_config['start']
+                generator_config['start'] = working_directory+"/"+temp 
                 gen = parse_generator(generator_config)
                 gen_map[str(generator_name)] = gen
             test_config.generators = gen_map
-
+        elif key == u'deferred':
+            test_config.deferred = safe_to_bool(value)
+            
+    
     return test_config
 
 
@@ -313,24 +484,32 @@ def read_file(path):
         f.close()
     return string
 
-#flag to check test is already retried
-is_retried = False
 
-def run_test(mytest, test_config=TestConfig(), context=None, curl_handle=None, *args, **kwargs):
+
+def run_test(mytest, test_config=TestConfig(), context=None, curl_handle=None,repeat_no = 0,working_directory= None, *args, **kwargs):
     """ Put together test pieces: configure & run actual test, return results """
-
+     
     # Initialize a context if not supplied
     my_context = context
     if my_context is None:
         my_context = Context()
-
+  
+    
     mytest.update_context_before(my_context)
+    
     templated_test = mytest.realize(my_context)
+    
+    if(isinstance(mytest.expected_status,str)): 
+        temp = templated_test.expected_status    
+        mytest.__setattr__("expected_status",ast.literal_eval(temp))    
+    
+    
     curl = templated_test.configure_curl(
         timeout=test_config.timeout, context=my_context, curl_handle=curl_handle)
     result = TestResponse()
+    
     result.test = templated_test
-
+     
     # reset the body, it holds values from previous runs otherwise
     headers = MyIO()
     body = MyIO()
@@ -356,9 +535,7 @@ def run_test(mytest, test_config=TestConfig(), context=None, curl_handle=None, *
             print("\n%s" % templated_test.body)
         raw_input("Press ENTER when ready (%d): " % (mytest.delay))
 
-#    if mytest.delay > 0:
-#        print("Delaying for %ds" % mytest.delay)
-#        time.sleep(mytest.delay)
+
     for test_need in mytest.depends_on:
         if not test_result[test_need]['result'] or test_result[test_need]['result'] == 'skip':
             print "\n\033[1;31m 'test: {0}' depends on 'test: {1}' \033[0m".format(mytest.name, test_need)
@@ -374,7 +551,7 @@ def run_test(mytest, test_config=TestConfig(), context=None, curl_handle=None, *
             e), details=trace, failure_type=validators.FAILURE_CURL_EXCEPTION))
         result.passed = False
         curl.close()
-        return result
+        return result 
 
     # Retrieve values
     result.body = body.getvalue()
@@ -384,26 +561,43 @@ def run_test(mytest, test_config=TestConfig(), context=None, curl_handle=None, *
 
     response_code = curl.getinfo(pycurl.RESPONSE_CODE)
     result.response_code = response_code
-
+    
     logger.debug("Initial Test Result, based on expected response code: " +
                  str(response_code in mytest.expected_status))
-
+    
     flag = 0
     global is_retried
     retry = 0
 
     if mytest.retries >= 0:
+        
         retry = mytest.retries
         flag = 1
         is_retried = True
     elif not is_retried:
         retry = test_config.retries
         flag = 2
-
+   
+    
     if response_code in mytest.expected_status:
         result.passed = True
+        if(repeat_no != 0):
+            with open(working_directory+"/test_stat.txt", "a") as myfile:
+                dict_dump = context.variables
+                dict_dump["result"] = "PASSED"
+                myfile.write(str(dict_dump)+",")
+            number = repeat_no
+	    while(number != 0):   
+                number = number-1        
+                return run_test(mytest, test_config, context, curl_handle ,working_directory=working_directory,repeat_no=number)
+                    
+        
+
     else:
+        if(repeat_no != 0):
+            retry = repeat_no
         # if retry not define
+        
         if retry == 0:
             # Invalid response code
             result.passed = False
@@ -411,23 +605,28 @@ def run_test(mytest, test_config=TestConfig(), context=None, curl_handle=None, *
                 response_code, mytest.expected_status)
             result.failures.append(Failure(
                 message=failure_message, details=None, failure_type=validators.FAILURE_INVALID_RESPONSE))
-
+            
         # retry test
         else:
+           # with open(working_directory+"/test_stat.txt", "a") as myfile:
+           #     dict_dump = context.variables
+           #     dict_dump["result"] = "FAILED"
+           #     myfile.write(str(dict_dump)+",")
             retry -= 1
             #retry from test
             if flag == 1:
                 print "########## Retrying test : ",mytest.name
                 mytest.retries = retry
                 time.sleep(mytest.delay)
-                return run_test(mytest, test_config, context, curl_handle)
+                return run_test(mytest, test_config, context, curl_handle,working_directory=working_directory)
 
             #retry from config
             if flag == 2:
                 print "########## Retrying : ",mytest.name
+               
                 test_config.retries = retry
                 time.sleep(test_config.delay)
-                return run_test(mytest, test_config, context, curl_handle)
+                return run_test(mytest, test_config, context, curl_handle,working_directory=working_directory)
 
 
     # Parse HTTP headers
@@ -446,26 +645,47 @@ def run_test(mytest, test_config=TestConfig(), context=None, curl_handle=None, *
 
     head = result.response_headers
     # execute validator on body
-    if result.passed is True:
-        body = result.body
-        if mytest.validators is not None and isinstance(mytest.validators, list):
-            logger.debug("executing this many validators: " +
-                         str(len(mytest.validators)))
-            failures = result.failures
-            for validator in mytest.validators:
-                validate_result = validator.validate(
-                    body=body, headers=head, context=my_context)
-                if not validate_result:
-                    result.passed = False
-                # Proxy for checking if it is a Failure object, because of
-                # import issues with isinstance there
-                if hasattr(validate_result, 'details'):
-                    failures.append(validate_result)
-                # TODO add printing of validation for interactive mode
-        else:
-            logger.debug("no validators found")
+    #if result.passed is True:
+    body = result.body
 
-        # Only do context updates if test was successful
+    if mytest.validators is not None and isinstance(mytest.validators, list):
+        logger.debug("executing this many validators: " +
+                         str(len(mytest.validators)))
+        failures = result.failures
+        for validator in mytest.validators:
+            validate_result = validator.validate(
+                    body=body, headers=head, context=my_context)
+            if not validate_result:
+                if(mytest.retries):
+                    retry -= 1
+                    #retry from test
+                    if flag == 1:
+                        print "########## Retrying test : ",mytest.name
+                        mytest.retries = retry
+                        time.sleep(mytest.delay)
+                        return run_test(mytest, test_config, context, curl_handle,working_directory=working_directory)
+
+                    #retry from config 
+                    if flag == 2:
+                        print "########## Retrying : ",mytest.name
+                        print(result.body)
+                        test_config.retries = retry
+                        time.sleep(test_config.delay)
+                        return run_test(mytest, test_config, context, curl_handle,working_directory=working_directory)
+
+                result.passed = False
+            else:
+                result.passed = True
+            # Proxy for checking if it is a Failure object, because of
+            # import issues with isinstance there
+            if hasattr(validate_result, 'details'):
+                failures.append(validate_result)
+            # TODO add printing of validation for interactive mode
+    else:
+        logger.debug("no validators found")
+       
+    # Only do context updates if test was successful
+    if(result.passed == True):
         mytest.update_context_after(result.body, head, my_context)
 
     # Print response body if override is set to print all *OR* if test failed
@@ -663,27 +883,310 @@ def log_failure(failure, context=None, test_config=TestConfig()):
         logger.error("Validator/Error details:" + str(failure.details))
 
 
+def run_tests_list(mytests,myconfig,context):
+    group_failure_counts = dict()
+    total_failures = 0
+    myinteractive = False
+    curl_handle = pycurl.Curl()
+    group_results = dict() 
+    
+    for test in mytests:
+            # Initialize the dictionaries to store test fail counts and results
+            if test.group not in group_results:
+                group_results[test.group] = list()
+                group_failure_counts[test.group] = 0
+
+            global is_retried
+            is_retried = False
+            print "\n =========================*=========================== \n"
+            
+           
+            result = run_test(test, test_config=myconfig, context=context, curl_handle=curl_handle)
+
+            if result is not None:
+                test_result[test.name]['result'] = result.passed
+                if not result.passed:
+                    test_result[test.name]['status'] = result.response_headers[3][1]
+                    test_result[test.name]['expected_status'] = test.expected_status
+
+            if result is None:
+                skip += 1
+                test_result[test.name]['result'] = "skip"
+                test_result[test.name]['depends_on'] = test.depends_on
+                continue
+
+            result.body = None  # Remove the body, save some memory!
+            if not result.passed:  # Print failure, increase failure counts for that test group
+            # Use result test URL to allow for templating
+                logger.error('Test Failed: ' + test.name + " URL=" + result.test.url +
+                         " Group=" + test.group + " HTTP Status Code: " + str(result.response_code))
+                # Print test failure reasons
+                if result.failures:
+                    for failure in result.failures:
+                        log_failure(failure, context=context,
+                                    test_config=myconfig)
+                # Increment test failure counts for that group (adding an entry
+                # if not present)
+                failures = group_failure_counts[test.group]
+                failures = failures + 1
+                group_failure_counts[test.group] = failures
+
+            else:  # Test passed, print results
+                logger.info('Test Succeeded: ' + test.name +
+                    " URL=" + test.url + " Group=" + test.group)
+
+            # Add results for this test group to the resultset
+            group_results[test.group].append(result)
+
+            # handle stop_on_failure flag
+            if not result.passed and test.stop_on_failure is not None and test.stop_on_failure:
+                print(
+                    'STOP ON FAILURE! stopping test set execution, continuing with other test sets')
+                break
+
+
+
+
+def run_include_testsets(testsets1,myworkflow,global_generators,working_directory = None):
+    """ execute  a test from included yaml file """
+
+       
+    flow = myworkflow.tests
+    params = myworkflow.params
+    params_templated = myworkflow.params_templated
+    generator_binds = myworkflow.generator_binds   
+    group_results = dict() 
+    group_failure_counts = dict()
+    total_failures = 0
+    myinteractive = False
+    curl_handle = pycurl.Curl()
+    context = Context()
+    depends_list=list()
+    exit_flag = False    
+    succeeded_test_count = 0
+    context.__setattr__('generator_binds',generator_binds)
+        
+   
+    for i in flow:
+        if(exit_flag == True):
+            break
+        for testset in testsets1:
+            mytests = deepcopy(testset.tests)           
+            myconfig = testset.config
+            if(deferr_flag==True):
+                if(myconfig.generators):
+                    if(global_generators):
+                        for gen_name,gen_obj in global_generators.items():
+                            myconfig.generators[gen_name]=gen_obj
+                else:
+                    myconfig.generators=global_generators
+
+            mybenchmarks = testset.benchmarks
+            
+            
+	               
+            # Bind variables & add generators if pertinent
+            if myconfig.variable_binds:
+                context.bind_variables(myconfig.variable_binds)
+            if myconfig.generators:
+                for key, value in myconfig.generators.items():
+                    context.add_generator(key, value)
+            
+            # Make sure we actually have tests to execute
+            if not mytests:
+                # no tests in this test set, probably just imports.. skip to next
+                # test set
+                break
+
+            myinteractive = True if myinteractive or myconfig.interactive else False
+
+            skip = 0
+            # Run tests, collecting statistics as needed
+
+            
+            for test in mytests:
+                
+                if(i.strip() == test.name.strip()):
+                    
+                    if(context.generator_binds and test.generator_binds):
+                        for var_name,gen_name in context.generator_binds.items():
+                            test.generator_binds[var_name]=gen_name
+                            
+                    if(params):
+                        
+                        s=str()
+                        if(test.name in params.keys()):
+                            for t in range(len(params[test.name])):
+   			        for old,new in params[test.name][t].items():
+                                    s=new
+                                    test.__setattr__(old,new)
+                        
+                        if(params_templated):
+                             if(test.name in params_templated.keys()):
+                                 
+                                 if(test.templates is None):
+                                     test.templates=dict()
+                                 templated_params_list=params_templated[test.name]
+
+                                 for para in templated_params_list: 
+                                     for t in range(len(params[test.name])):
+                                         for old,new in params[test.name][t].items():
+                                             if(para==old):  
+                                                 
+                                                 test.templates[para] = string.Template(new)  
+                        
+                        if(test.repeat): 
+                            repeat = test.repeat
+                        else:
+                            repeat = 0
+			
+                        result = run_test(test,test_config=myconfig, context=context, curl_handle=curl_handle,repeat_no = repeat,working_directory = working_directory)    
+                         		             
+                    if(not params):
+	                result = run_test(test, test_config=myconfig, context=context, curl_handle=curl_handle)
+                        
+                    
+                    # Initialize the dictionaries to store test fail counts and results
+                    if test.group not in group_results:
+                        group_results[test.group] = list()
+                        group_failure_counts[test.group] = 0
+
+                    global is_retried
+                    is_retried = False
+                    print "\n ============================================================= \n"
+
+                    
+	            if result is not None:
+		        test_result[test.name.strip()]['result'] = result.passed
+		        if not result.passed:
+		            test_result[test.name.strip()]['status'] = result.response_headers[3][1]
+		            test_result[test.name.strip()]['expected_status'] = test.expected_status
+
+	            if result is None:
+		        skip += 1
+		        test_result[test.name.strip()]['result'] = "skip"
+		        test_result[test.name.strip()]['depends_on'] = test.depends_on
+		        continue
+
+	            result.body = None  # Remove the body, save some memory!
+	            if not result.passed:  # Print failure, increase failure counts for that test group
+	               # Use result test URL to allow for templating
+		        logger.error('Test Failed: ' + test.name + " URL=" + result.test.url +
+		         " Group=" + test.group + " HTTP Status Code: " + str(result.response_code))
+		       #  Print test failure reasons
+		        if result.failures:
+		            for failure in result.failures:
+		                log_failure(failure, context=context,
+		                    test_config=myconfig)
+		        # Increment test failure counts for that group (adding an entry
+		        #  if not present)
+		        failures = group_failure_counts[test.group]
+		        failures = failures + 1
+		        group_failure_counts[test.group] = failures
+
+	            else:  # Test passed, print results
+		            logger.info('Test Succeeded: ' + test.name +
+		               " URL=" + test.url + " Group=" + test.group)
+
+	            # Add results for this test group to the resultset
+	            group_results[test.group].append(result)
+
+                    if(result.passed == False):
+                            print("\n"+test.name+" failed ")
+                            exit_flag = True
+                            break
+                    else:
+                        succeeded_test_count += 1
+
+	            # handle stop_on_failure flag
+	            if not result.passed and test.stop_on_failure is not None and test.stop_on_failure:
+		        print(
+		                'STOP ON FAILURE! stopping test set execution, continuing with other test sets')
+		        break
+                    break
+
+                    
+
+        
+    print "\n ==================================================== \n"
+    if myinteractive:
+        # a break for when interactive bits are complete, before summary data
+        print("===================================")
+  
+    # Print summary results
+    for group in sorted(group_results.keys()):
+       
+        if(deferr_flag == True):
+            test_count = len(flow)
+            failures = test_count - succeeded_test_count
+            skip = failures
+        else:
+            test_count = len(group_results[group])
+            failures = group_failure_counts[group]
+
+        total_failures = total_failures + failures
+       
+        passfail = {True: u'SUCCEEDED: ', False: u'FAILED: '}
+        output_string = "Test Group {0} {1}: {2}/{3} Tests Passed!\nTest Group {0} SKIPPED: {4}"\
+              .format(group, passfail[failures == 0], str(test_count - failures), str(test_count), str(skip)) 
+
+        with open('test_result.json', 'w') as out:
+            json.dump(test_result, out, indent=4)
+
+
+        if myconfig.skip_term_colors:
+            print(output_string)
+        else:
+            if failures > 0:
+                print('\033[91m' + output_string + '\033[0m')
+            else: 
+                print('\033[92m' + output_string + '\033[0m')
+        
+    if(deferr_flag == True):
+        out_string = " Workflow {0} : SUCCEEDED ".format(myworkflow.name)
+        fail_flag = False
+           
+        for test_name in flow: 
+            if('result' not in test_result[test_name.strip()].keys() or test_result[test_name]['result'] == False):
+                out_string = " Workflow {0} : FAILED ".format(myworkflow.name)
+                print('\033[91m' + out_string + '\033[0m')
+                fail_flag = True
+                break
+            
+        if(fail_flag == False):
+            print('\033[92m' + out_string + '\033[0m')
+            
+                           
+    if(total_failures > 0):
+        return False       
+    else:
+        return True
+
+
 def run_testsets(testsets):
     """ Execute a set of tests, using given TestSet list input """
     group_results = dict()  # results, by group
     group_failure_counts = dict()
     total_failures = 0
     myinteractive = False
+    ssl_insecure=True
     curl_handle = pycurl.Curl()
-
+    
+    
     for testset in testsets:
         mytests = testset.tests
         myconfig = testset.config
         mybenchmarks = testset.benchmarks
         context = Context()
 
+        
         # Bind variables & add generators if pertinent
         if myconfig.variable_binds:
             context.bind_variables(myconfig.variable_binds)
         if myconfig.generators:
             for key, value in myconfig.generators.items():
                 context.add_generator(key, value)
-
+        
         # Make sure we actually have tests to execute
         if not mytests and not mybenchmarks:
             # no tests in this test set, probably just imports.. skip to next
@@ -702,9 +1205,11 @@ def run_testsets(testsets):
 
             global is_retried
             is_retried = False
-            print "\n ==================================================== \n"
+            print "\n =========================*=========================== \n"
+            
+            
             result = run_test(test, test_config=myconfig, context=context, curl_handle=curl_handle)
-
+            
             if result is not None:
                 test_result[test.name]['result'] = result.passed
                 if not result.passed:
@@ -864,6 +1369,8 @@ def main(args):
         absolute_urls - OPTIONAL - mode that treats URLs in tests as absolute/full URLs instead of relative URLs
         skip_term_colors - OPTIONAL - mode that turn off the output term colors
     """
+    
+    
 
     if 'log' in args and args['log'] is not None:
         logger.setLevel(LOGGING_LEVELS.get(
@@ -872,14 +1379,22 @@ def main(args):
     if 'import_extensions' in args and args['import_extensions']:
         extensions = args['import_extensions'].split(';')
 
+
         # We need to add current folder to working path to import modules
-        working_folder = args['cwd']
+        if not args['I']:
+            working_folder=os.path.realpath(os.path.abspath(os.getcwd()))    
+        else:
+            working_folder = args['I']
         if working_folder not in sys.path:
             sys.path.insert(0, working_folder)
         register_extensions(extensions)
-
+    
+    if not args['I']:
+        working_folder=os.path.realpath(os.path.abspath(os.getcwd()))    
+    else:
+        working_folder = args['I']
     test_file = args['test']
-    test_structure = read_test_file(test_file)
+    test_structure = read_test_file(working_folder+"/"+test_file)
     my_vars = None
     if 'vars' in args and args['vars'] is not None:
         my_vars = yaml.safe_load(args['vars'])
@@ -891,9 +1406,23 @@ def main(args):
 
     if 'absolute_urls' in args and args['absolute_urls']:
         base_url = ''
-
+    
+    
     tests = parse_testsets(base_url, test_structure,
-                           working_directory=os.path.dirname(test_file), vars=my_vars)
+                           working_directory=args['I'], vars=my_vars)
+    
+    
+    if(deferr_flag == True):
+        if(final_fail > 0):
+            print('\033[91m'+"\nTotal Workflows: "+str(final_fail+final_success)+'\033[0m')
+            print('\033[91m'+"Total Succeeded Workflows: "+str(final_success)+'\033[0m')
+            print('\033[91m'+"Total Failed Workflows: "+str(final_fail)+'\033[0m')
+        else:
+            print('\033[92m'+"\nTotal Workflows: "+str(final_fail+final_success)+'\033[0m')
+            print('\033[92m'+"Total Succeeded Workflows: "+str(final_success)+'\033[0m')
+            print('\033[92m'+"Total Failed Workflows: "+str(final_fail)+'\033[0m')
+
+          
 
     # Override configs from command line if config set
     for t in tests:
@@ -914,14 +1443,16 @@ def main(args):
 
         if 'skip_term_colors' in args and args['skip_term_colors'] is not None:
             t.config.skip_term_colors = safe_to_bool(args['skip_term_colors'])
-
+        
+    
     # Execute all testsets
-    failures = run_testsets(tests)
-
-    sys.exit(failures)
+    if(tests[len(tests)-1].config.deferred == False):
+        failures = run_testsets(tests)
+        sys.exit(failures)
 
 
 def parse_command_line_args(args_in):
+    
     """ Runs everything needed to execute from the command line, so main method is callable without arg parsing """
     parser = OptionParser(
         usage="usage: %prog base_url test_filename.yaml [options] ")
@@ -930,6 +1461,8 @@ def parse_command_line_args(args_in):
     parser.add_option(u"--print-headers", help="Print all response headers",
                       action="store", type="string", dest="print_headers")
     parser.add_option(u"--log", help="Logging level",
+                      action="store", type="string")
+    parser.add_option(u"--I", help="folder path for input files",
                       action="store", type="string")
     parser.add_option(u"--interactive", help="Interactive mode",
                       action="store", type="string")
@@ -967,8 +1500,10 @@ def parse_command_line_args(args_in):
             parser.error(
                 "wrong number of arguments, need both url and test filename, either as 1st and 2nd parameters or via --url and --test")
 
+
     # So modules can be loaded from current folder
-    args['cwd'] = os.path.realpath(os.path.abspath(os.getcwd()))
+    #args['cwd'] = os.path.realpath(os.path.abspath(os.getcwd()))
+    #args['cwd']=args_in['I']
     return args
 
 

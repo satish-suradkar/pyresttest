@@ -9,11 +9,7 @@ PYTHON_MAJOR_VERSION = sys.version_info[0]
 if PYTHON_MAJOR_VERSION > 2:
     from past.builtins import basestring
 
-
-"""
-Encapsulates contend handling logic, for pulling file content into tests
-"""
-
+"""Encapsulates contend handling logic, for pulling file content into tests"""
 
 class ContentHandler:
     """ Handles content that may be (lazily) read from filesystem and/or templated to various degrees
@@ -40,7 +36,6 @@ class ContentHandler:
 
     def get_content(self, context=None):
         """ Does all context binding and pathing to get content, templated out """
-
         if self.is_file:
             path = self.content
             if self.is_template_path and context:
@@ -93,7 +88,7 @@ class ContentHandler:
             or something
 
         """
-
+        
         # Tread carefully, this one is a bit narly because of nesting
         output = ContentHandler()
         is_template_path = False
@@ -113,9 +108,9 @@ class ContentHandler:
                     "Content must be a string, dictionary, or list of dictionaries")
 
             is_done = True
-
             # Dictionary or list of dictionaries
             flat = lowercase_keys(flatten_dictionaries(node))
+            
             for key, value in flat.items():
                 if key == u'template':
                     if isinstance(value, basestring):

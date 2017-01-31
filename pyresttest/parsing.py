@@ -2,7 +2,6 @@ from __future__ import absolute_import
 import sys
 import string
 
-
 # Python 3 compatibility shims
 import six
 from six import binary_type
@@ -67,7 +66,7 @@ def flatten_dictionaries(input):
     """ Flatten a list of dictionaries into a single dictionary, to allow flexible YAML use
       Dictionary comprehensions can do this, but would like to allow for pre-Python 2.7 use
       If input isn't a list, just return it.... """
-    output = dict()
+    output = dict()    
     if isinstance(input, list):
         for map in input:
             output.update(map)

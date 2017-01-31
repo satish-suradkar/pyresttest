@@ -31,6 +31,7 @@ class BindingTest(unittest.TestCase):
         self.assertEqual(2, context.mod_count)
 
     def test_generator(self):
+        
         """ Test adding a generator """
         context = Context()
         self.assertEqual(0, len(context.get_generators()))
