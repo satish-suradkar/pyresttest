@@ -19,7 +19,9 @@ import collections
 import ast
 from copy import deepcopy
 
-deferr_flag=True
+
+
+deferr_flag=False
 params_flag=0
 is_retried = False #flag to check test is already retried
 
@@ -127,7 +129,7 @@ class TestConfig:
     verbose = False
     ssl_insecure = True
     skip_term_colors = False  # Turn off output term colors
-    deferred=True
+    deferred= False
     # Binding and creation of generators
     variable_binds = None
     generators = None  # Map of generator name to generator functionOB
@@ -1413,7 +1415,7 @@ def main(args):
                            working_directory=args['I'], vars=my_vars)
     
     
-    if(deferr_flag == True):
+    if((final_fail+final_success)>0):
         if(final_fail > 0):
             print('\033[91m'+"\nTotal Workflows: "+str(final_fail+final_success)+'\033[0m')
             print('\033[91m'+"Total Succeeded Workflows: "+str(final_success)+'\033[0m')
@@ -1463,7 +1465,7 @@ def parse_command_line_args(args_in):
                       action="store", type="string", dest="print_headers")
     parser.add_option(u"--log", help="Logging level",
                       action="store", type="string")
-    parser.add_option(u"--I", help="folder path for input files",
+    parser.add_option(u"-I", help="folder path for input files",
                       action="store", type="string")
     parser.add_option(u"--interactive", help="Interactive mode",
                       action="store", type="string")

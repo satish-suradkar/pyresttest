@@ -9,6 +9,7 @@ from contenthandling import ContentHandler
 import validators
 import parsing
 
+
 from parsing import *
 
 # Find the best implementation available on this platform
@@ -581,7 +582,6 @@ class Test(object):
             
             myparsing = CONFIG_ELEMENTS.get(configelement)
             if myparsing:
-                
                 converted = myparsing[0](configvalue)
                 setattr(configobject, configelement, converted)
                 return True
