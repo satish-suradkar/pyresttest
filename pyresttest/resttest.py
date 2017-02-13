@@ -24,7 +24,8 @@ from copy import deepcopy
 deferr_flag=False
 params_flag=0
 is_retried = False #flag to check test is already retried
-
+final_success = 0
+final_fail = 0
 
 
 try:
@@ -296,8 +297,7 @@ def parse_testsets_included(base_url, test_structure, test_files=set(), working_
 
     return testsets
 
-final_success = 0
-final_fail = 0
+
 
 
 
@@ -381,9 +381,9 @@ def parse_testsets(base_url, test_structure, test_files=set(), working_directory
                             child = node[key]
                             
                             myworkflow = WorkFlow.parse_workflow(base_url, child,global_gen=test_config.generators)
-                                                    
+                            
                             if(deferr_flag==True): 
-                               workflow_flag = run_include_testsets(testsets,myworkflow,test_config.generators,working_directory=working_directory)
+                               workflow_flag = run_include_testsets(testsets,myworkflow,test_config.generators,working_directory=working_directory,deferr_flag=True)
                             
                             if(workflow_flag == True):
                                 workflow_success = workflow_success+1
@@ -950,7 +950,7 @@ def run_tests_list(mytests,myconfig,context):
 
 
 
-def run_include_testsets(testsets1,myworkflow,global_generators,working_directory = None):
+def run_include_testsets(testsets1,myworkflow,global_generators,working_directory = None,deferr_flag=False):
     """ execute  a test from included yaml file """
 
        
@@ -969,7 +969,7 @@ def run_include_testsets(testsets1,myworkflow,global_generators,working_director
     succeeded_test_count = 0
     context.__setattr__('generator_binds',generator_binds)
         
-   
+    
     for i in flow:
         if(exit_flag == True):
             break
@@ -1144,7 +1144,8 @@ def run_include_testsets(testsets1,myworkflow,global_generators,working_director
                 print('\033[91m' + output_string + '\033[0m')
             else: 
                 print('\033[92m' + output_string + '\033[0m')
-        
+    
+    
     if(deferr_flag == True):
         out_string = " Workflow {0} : SUCCEEDED ".format(myworkflow.name)
         fail_flag = False
