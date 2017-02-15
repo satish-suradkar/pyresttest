@@ -75,6 +75,7 @@ else:  # Normal imports
     from tests import Test, DEFAULT_TIMEOUT
     import benchmarks
     from benchmarks import Benchmark, AGGREGATES, METRICS, parse_benchmark
+    from workflow import WorkFlow
 
 """
 Executable class, ties everything together into the framework.
