@@ -1396,10 +1396,13 @@ def main(args):
     
     if not args['I']:
         working_folder=os.path.realpath(os.path.abspath(os.getcwd()))    
+        test_file = args['test'] 
+        test_structure = read_test_file(test_file)  
     else:
         working_folder = args['I']
-    test_file = args['test']
-    test_structure = read_test_file(working_folder+"/"+test_file)
+        test_file = args['test']
+        test_structure = read_test_file(working_folder+"/"+test_file)
+
     my_vars = None
     if 'vars' in args and args['vars'] is not None:
         my_vars = yaml.safe_load(args['vars'])
