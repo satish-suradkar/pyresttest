@@ -318,7 +318,7 @@ def unique_name_check(testsets):
     return True
     
 
-def parse_testsets(base_url, test_structure, test_files=set(), working_directory=None, vars=None):
+def parse_testsets(base_url, test_structure, test_files=set(), command_args=None, vars=None):
     """ Convert a Python data structure read from validated YAML to a set of structured testsets
     The data structure is assumed to be a list of dictionaries, each of which describes:
         - a tests (test structure)
@@ -341,7 +341,9 @@ def parse_testsets(base_url, test_structure, test_files=set(), working_directory
     benchmarks = list()
     testsets_included=list()
     include_set=set()
-   
+
+    if(command_args.has_key("I")):
+        working_directory = command_args['I']
     
     if working_directory is None:
         working_directory = os.path.abspath(os.getcwd())
@@ -368,8 +370,9 @@ def parse_testsets(base_url, test_structure, test_files=set(), working_directory
                                     include_set.add(file)
                                     
                                     import_test_structure = read_test_file(working_directory+"/"+file)
+ 				   
                                     included_testsets = parse_testsets(
-                                            base_url, import_test_structure, test_files,working_directory, vars=vars)
+                                            base_url, import_test_structure, test_files,command_args=command_args, vars=vars)
                                     
                                     testsets.extend(included_testsets)
                             continue   
@@ -382,9 +385,9 @@ def parse_testsets(base_url, test_structure, test_files=set(), working_directory
                             child = node[key]
                             
                             myworkflow = WorkFlow.parse_workflow(base_url, child,global_gen=test_config.generators)
-                            
+			  
                             if(deferr_flag==True): 
-                               workflow_flag = run_include_testsets(testsets,myworkflow,test_config.generators,working_directory=working_directory,deferr_flag=True)
+                               workflow_flag = run_include_testsets(testsets,myworkflow,test_config.generators,command_args=command_args,deferr_flag=True)
                             
                             if(workflow_flag == True):
                                 workflow_success = workflow_success+1
@@ -402,7 +405,7 @@ def parse_testsets(base_url, test_structure, test_files=set(), working_directory
                                 import_test_structure = read_test_file(importfile)
                                 with cd(os.path.dirname(os.path.realpath(importfile))):
                                     import_testsets = parse_testsets(
-                                         base_url, import_test_structure, test_files, vars=vars)
+                                         base_url, import_test_structure, test_files,command_args=command_args,vars=vars)
                                     testsets.extend(import_testsets)
                             continue
 
@@ -626,8 +629,7 @@ def run_test(mytest, test_config=TestConfig(), context=None, curl_handle=None,re
 
             #retry from config
             if flag == 2:
-                print "########## Retrying : ",mytest.name
-               
+                print "########## Retrying : ",mytest.name               
                 test_config.retries = retry
                 time.sleep(test_config.delay)
                 return run_test(mytest, test_config, context, curl_handle,working_directory=working_directory)
@@ -901,9 +903,7 @@ def run_tests_list(mytests,myconfig,context):
                 group_failure_counts[test.group] = 0
 
             global is_retried
-            is_retried = False
-            print "\n =========================*=========================== \n"
-            
+            is_retried = False 
            
             result = run_test(test, test_config=myconfig, context=context, curl_handle=curl_handle)
 
@@ -951,10 +951,10 @@ def run_tests_list(mytests,myconfig,context):
 
 
 
-def run_include_testsets(testsets1,myworkflow,global_generators,working_directory = None,deferr_flag=False):
+def run_include_testsets(testsets1,myworkflow,global_generators,command_args = None,deferr_flag=False):
     """ execute  a test from included yaml file """
 
-       
+    
     flow = myworkflow.tests
     params = myworkflow.params
     params_templated = myworkflow.params_templated
@@ -970,6 +970,11 @@ def run_include_testsets(testsets1,myworkflow,global_generators,working_director
     succeeded_test_count = 0
     context.__setattr__('generator_binds',generator_binds)
         
+    if(command_args.has_key("I")):
+        working_directory = command_args['I']
+
+    if working_directory is None:
+        working_directory = os.path.abspath(os.getcwd())
     
     for i in flow:
         if(exit_flag == True):
@@ -977,6 +982,7 @@ def run_include_testsets(testsets1,myworkflow,global_generators,working_director
         for testset in testsets1:
             mytests = deepcopy(testset.tests)           
             myconfig = testset.config
+            
             if(deferr_flag==True):
                 if(myconfig.generators):
                     if(global_generators):
@@ -1111,7 +1117,7 @@ def run_include_testsets(testsets1,myworkflow,global_generators,working_director
 
                     
 
-        
+       
     print "\n ==================================================== \n"
     if myinteractive:
         # a break for when interactive bits are complete, before summary data
@@ -1137,8 +1143,8 @@ def run_include_testsets(testsets1,myworkflow,global_generators,working_director
         with open('test_result.json', 'w') as out:
             json.dump(test_result, out, indent=4)
 
-
-        if myconfig.skip_term_colors:
+       
+        if command_args['skip_term_colors']:
             print(output_string)
         else:
             if failures > 0:
@@ -1154,12 +1160,18 @@ def run_include_testsets(testsets1,myworkflow,global_generators,working_director
         for test_name in flow: 
             if('result' not in test_result[test_name.strip()].keys() or test_result[test_name]['result'] == False):
                 out_string = " Workflow {0} : FAILED ".format(myworkflow.name)
-                print('\033[91m' + out_string + '\033[0m')
+                if command_args['skip_term_colors']:
+                    print(output_string)
+                else:
+                    print('\033[91m' + out_string + '\033[0m')
                 fail_flag = True
                 break
             
         if(fail_flag == False):
-            print('\033[92m' + out_string + '\033[0m')
+            if command_args['skip_term_colors']:
+                print(output_string)
+            else:
+                print('\033[92m' + out_string + '\033[0m')
             
                            
     if(total_failures > 0):
@@ -1417,21 +1429,10 @@ def main(args):
     
     
     tests = parse_testsets(base_url, test_structure,
-                           working_directory=args['I'], vars=my_vars)
+                           command_args=args, vars=my_vars)
     
     
-    if((final_fail+final_success)>0):
-        if(final_fail > 0):
-            print('\033[91m'+"\nTotal Workflows: "+str(final_fail+final_success)+'\033[0m')
-            print('\033[91m'+"Total Succeeded Workflows: "+str(final_success)+'\033[0m')
-            print('\033[91m'+"Total Failed Workflows: "+str(final_fail)+'\033[0m')
-        else:
-            print('\033[92m'+"\nTotal Workflows: "+str(final_fail+final_success)+'\033[0m')
-            print('\033[92m'+"Total Succeeded Workflows: "+str(final_success)+'\033[0m')
-            print('\033[92m'+"Total Failed Workflows: "+str(final_fail)+'\033[0m')
-
-          
-
+    
     # Override configs from command line if config set
     for t in tests:
         if 'print_bodies' in args and args['print_bodies'] is not None and bool(args['print_bodies']):
@@ -1451,8 +1452,25 @@ def main(args):
 
         if 'skip_term_colors' in args and args['skip_term_colors'] is not None:
             t.config.skip_term_colors = safe_to_bool(args['skip_term_colors'])
-        
+
     
+    if((final_fail+final_success)>0):
+        if(args['skip_term_colors'] == True):
+            print("\nTotal Workflows: "+str(final_fail+final_success))
+            print("Total Succeeded Workflows: "+str(final_success))
+            print("Total Failed Workflows: "+str(final_fail))
+        else:
+            if(final_fail > 0):
+                print('\033[91m'+"\nTotal Workflows: "+str(final_fail+final_success)+'\033[0m')
+            	print('\033[91m'+"Total Succeeded Workflows: "+str(final_success)+'\033[0m')
+            	print('\033[91m'+"Total Failed Workflows: "+str(final_fail)+'\033[0m')
+       	    else:
+            	print('\033[92m'+"\nTotal Workflows: "+str(final_fail+final_success)+'\033[0m')
+            	print('\033[92m'+"Total Succeeded Workflows: "+str(final_success)+'\033[0m')
+            	print('\033[92m'+"Total Failed Workflows: "+str(final_fail)+'\033[0m')
+        sys.exit(final_fail)
+    
+         
     # Execute all testsets
     if(tests[len(tests)-1].config.deferred == False):
         failures = run_testsets(tests)
