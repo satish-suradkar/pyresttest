@@ -219,7 +219,7 @@ def parse_headers(header_string):
             for k, v in header_msg.items()]
     else:
         header_msg = message_from_string(headers)
-        # Note: HTTP headers are *case-insensitive* per RFC 2616
+        # Note: HTTP headers are *,case-insensitive* per RFC 2616
         return [(k.lower(), v) for k, v in header_msg.items()]
 
 
@@ -1063,7 +1063,7 @@ def run_include_testsets(testsets1,myworkflow,global_generators,command_args = N
 
                     global is_retried
                     is_retried = False
-                    print "\n ============================================================= \n"
+                    #print "\n ============================================================= \n"
 
                     
 	            if result is not None:
@@ -1118,7 +1118,7 @@ def run_include_testsets(testsets1,myworkflow,global_generators,command_args = N
                     
 
        
-    print "\n ==================================================== \n"
+    #print "\n ==================================================== \n"
     if myinteractive:
         # a break for when interactive bits are complete, before summary data
         print("===================================")
@@ -1161,7 +1161,7 @@ def run_include_testsets(testsets1,myworkflow,global_generators,command_args = N
             if('result' not in test_result[test_name.strip()].keys() or test_result[test_name]['result'] == False):
                 out_string = " Workflow {0} : FAILED ".format(myworkflow.name)
                 if command_args['skip_term_colors']:
-                    print(output_string)
+                    print(out_string)
                 else:
                     print('\033[91m' + out_string + '\033[0m')
                 fail_flag = True
@@ -1169,7 +1169,7 @@ def run_include_testsets(testsets1,myworkflow,global_generators,command_args = N
             
         if(fail_flag == False):
             if command_args['skip_term_colors']:
-                print(output_string)
+                print(out_string)
             else:
                 print('\033[92m' + out_string + '\033[0m')
             
@@ -1222,7 +1222,7 @@ def run_testsets(testsets):
 
             global is_retried
             is_retried = False
-            print "\n =========================*=========================== \n"
+            #print "\n =========================*=========================== \n"
             
             
             result = run_test(test, test_config=myconfig, context=context, curl_handle=curl_handle)
@@ -1291,7 +1291,7 @@ def run_testsets(testsets):
                 write_method(my_file, benchmark_result,
                              benchmark, test_config=myconfig)
                 my_file.close()
-    print "\n ==================================================== \n"
+    #print "\n ==================================================== \n"
     if myinteractive:
         # a break for when interactive bits are complete, before summary data
         print("===================================")
