@@ -622,14 +622,12 @@ def run_test(mytest, test_config=TestConfig(), context=None, curl_handle=None,re
             retry -= 1
             #retry from test
             if flag == 1:
-                print "########## Retrying test : ",mytest.name
                 mytest.retries = retry
                 time.sleep(mytest.delay)
                 return run_test(mytest, test_config, context, curl_handle,working_directory=working_directory)
 
             #retry from config
             if flag == 2:
-                print "########## Retrying : ",mytest.name               
                 test_config.retries = retry
                 time.sleep(test_config.delay)
                 return run_test(mytest, test_config, context, curl_handle,working_directory=working_directory)
@@ -666,14 +664,12 @@ def run_test(mytest, test_config=TestConfig(), context=None, curl_handle=None,re
                     retry -= 1
                     #retry from test
                     if flag == 1:
-                        print "########## Retrying test : ",mytest.name
                         mytest.retries = retry
                         time.sleep(mytest.delay)
                         return run_test(mytest, test_config, context, curl_handle,working_directory=working_directory)
 
                     #retry from config 
                     if flag == 2:
-                        print "########## Retrying : ",mytest.name
                         print(result.body)
                         test_config.retries = retry
                         time.sleep(test_config.delay)
