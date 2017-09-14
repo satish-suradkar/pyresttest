@@ -18,7 +18,6 @@ import string
 import collections
 import ast
 from copy import deepcopy
-import pdb
 
 
 
@@ -903,7 +902,6 @@ def run_tests_list(mytests,myconfig,context):
            
             result = run_test(test, test_config=myconfig, context=context, curl_handle=curl_handle)
             if result is not None:
-                #pdb.set_trace()
                 test_result[test.name]['result'] = result.passed
                 if not result.passed:
                     if hasattr(result, 'failures'):
@@ -1066,10 +1064,8 @@ def run_include_testsets(testsets1,myworkflow,global_generators,command_args = N
                     
 
                     if result is not None:                       
-                        #pdb.set_trace()
                         if result.test.display_name is not None:
                             test_result_out[result.test._display_name.strip()]['result'] = result.passed
-                            #pdb.set_trace()
                             if not result.passed:
                                 if hasattr(result, 'failures'):
                                     error_str = ''.join(str(e) for e in result.failures)
@@ -1099,7 +1095,6 @@ def run_include_testsets(testsets1,myworkflow,global_generators,command_args = N
 
 
                     if result is not None:
-                        pdb.set_trace()
                         test_result[test.name.strip()]['result'] = result.passed
                         if not result.passed:
                             if hasattr(result, 'failures'):
@@ -1262,7 +1257,7 @@ def run_testsets(testsets):
             
             result = run_test(test, test_config=myconfig, context=context, curl_handle=curl_handle)
             if result is not None:
-                #pdb.set_trace()
+                
                 test_result[test.name]['result'] = result.passed
                 if not result.passed:
                     if hasattr(result, 'failures'):
@@ -1273,7 +1268,7 @@ def run_testsets(testsets):
                     #    if 'details' in json.loads(result.__str__())['body'].keys():
                     #        test_result[test.name.strip()]['details'] = result.body.details
                     #if 'details' in json.loads(result.__str__()).keys():
-                    #    pdb.set_trace()
+                    
                     #    test_result[test.name.strip()]['details'] = json.loads(result.__str__())['details']
                     test_result[test.name]['expected_status'] = test.expected_status
 
