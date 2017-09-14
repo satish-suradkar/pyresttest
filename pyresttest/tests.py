@@ -8,6 +8,7 @@ import contenthandling
 from contenthandling import ContentHandler
 import validators
 import parsing
+import pdb
 
 
 from parsing import *
@@ -101,6 +102,7 @@ def coerce_list_of_strings(val):
 class Test(object):
     """ Describes a REST test "/delay"""
     _url = None
+    _display_name = None
     expected_status = [200]  # expected HTTP status code or codes
     _body = None
     _headers = dict()  # HTTP Headers
@@ -143,7 +145,6 @@ class Test(object):
     # Template handling logic
     def set_template(self, variable_name, template_string):
         """ Add a templating instance for variable given """
-       
         if self.templates is None:
             self.templates = dict()
         self.templates[variable_name] = string.Template(template_string)
@@ -158,10 +159,8 @@ class Test(object):
         """ Realize a templated value, using variables from context
             Returns None if no template is set for that variable """
         val = None
-	
         if context is None or self.templates is None or variable_name not in self.templates:
             return None
-        
         return self.templates[variable_name].safe_substitute(context.get_values())
 
     # These are variables that can be templated
@@ -224,6 +223,7 @@ class Test(object):
     auth_username = property(get_auth_username,set_auth_username,None, 'Auth Username')
 
     NAME_URL = 'url'
+    DISPLAY_NAME = 'display_name'
     
     def set_method(self, value,isTemplate=False):
         """ Set method, passing flag if using a template """
@@ -283,6 +283,25 @@ class Test(object):
         return val
 
     url = property(get_url, set_url, None, 'URL fragment for request')
+
+
+    def set_display_name(self, value, isTemplate=False):
+        """ Set Disply Name, passing flag if using a template """
+        if isTemplate:
+            self.set_template(self.DISPLAY_NAME, value)
+        else:
+            self.del_template(self.DISPLAY_NAME)
+        self._display_name = value
+
+    def get_display_name(self, context=None):
+        """ Get Display Name, applying template if pertinent """
+
+        val = self.realize_template(self.DISPLAY_NAME, context)
+        if val is None:
+            val = self._display_name
+        return val
+
+    display_name = property(get_display_name, set_display_name, None, 'Display Name')
 
     NAME_HEADERS = 'headers'
     # Totally different from others
@@ -364,6 +383,7 @@ class Test(object):
             if isinstance(self._body, ContentHandler):   
                 selfcopy._body = self._body.get_content(context)
             selfcopy._url = self.get_url(context=context)
+            selfcopy._display_name = self.get_display_name(context=context)
             selfcopy._headers = self.get_headers(context=context)
             selfcopy._method = self.get_method(context=context)
             selfcopy._expected_status = self.get_expected_status(context=context)
@@ -589,7 +609,6 @@ class Test(object):
 
         # Copy/convert input elements into appropriate form for a test object
         for configelement, configvalue in node.items():
-            
             if use_config_parser(mytest, configelement, configvalue):
                 continue
             
@@ -606,6 +625,20 @@ class Test(object):
                     assert isinstance(configvalue, basestring) or isinstance(
                         configvalue, int)
                     mytest.url = urlparse.urljoin(base_url, coerce_to_string(configvalue))
+
+
+            if configelement == u'display_name':
+                 temp = configvalue
+                 if isinstance(configvalue, dict):
+                     # Template is used for Disply Name
+                     val = lowercase_keys(configvalue)[u'template']
+                     assert isinstance(val, basestring) or isinstance(val, int)
+                     mytest.set_display_name(val, isTemplate=True)
+                 else:
+                     assert isinstance(configvalue, basestring) or isinstance(
+                         configvalue, int)
+                     mytest.display_name = urlparse.urljoin(base_url, coerce_to_string(configvalue)) 
+                    
 
             if configelement == u'auth_password':
                 temp = configvalue
@@ -734,5 +767,4 @@ class Test(object):
             elif mytest.method == 'DELETE':
                 mytest.expected_status = [200, 202, 204]
             # Fallthrough default is simply [200]
-        
         return mytest

@@ -18,6 +18,7 @@ import string
 import collections
 import ast
 from copy import deepcopy
+import pdb
 
 
 
@@ -99,7 +100,7 @@ logger = logging.getLogger('pyresttest')
 DIR_LOCK = threading.RLock()  # Guards operations changing the working directory
 
 test_result = defaultdict(dict)
-test_result_list = []
+test_result_out = defaultdict(dict)
 
 class cd:
     """Context manager for changing the current working directory"""
@@ -510,7 +511,6 @@ def run_test(mytest, test_config=TestConfig(), context=None, curl_handle=None,re
         temp = templated_test.expected_status    
         mytest.__setattr__("expected_status",ast.literal_eval(temp))    
     
-    
     curl = templated_test.configure_curl(
         timeout=test_config.timeout, context=my_context, curl_handle=curl_handle)
     result = TestResponse()
@@ -902,11 +902,13 @@ def run_tests_list(mytests,myconfig,context):
             is_retried = False 
            
             result = run_test(test, test_config=myconfig, context=context, curl_handle=curl_handle)
-
             if result is not None:
+                #pdb.set_trace()
                 test_result[test.name]['result'] = result.passed
                 if not result.passed:
-                    test_result[test.name]['status'] = result.response_headers[3][1]
+                    if hasattr(result, 'failures'):
+                        error_str = ''.join(str(e) for e in result.failures)
+                        test_result_out[result.test.name.strip()]['error_msg'] = error_str
                     test_result[test.name]['expected_status'] = test.expected_status
 
             if result is None:
@@ -971,7 +973,7 @@ def run_include_testsets(testsets1,myworkflow,global_generators,command_args = N
 
     if working_directory is None:
         working_directory = os.path.abspath(os.getcwd())
-    
+
     for i in flow:
         if(exit_flag == True):
             break
@@ -1045,7 +1047,7 @@ def run_include_testsets(testsets1,myworkflow,global_generators,command_args = N
                             repeat = test.repeat
                         else:
                             repeat = 0
-			
+		                
                         result = run_test(test,test_config=myconfig, context=context, curl_handle=curl_handle,repeat_no = repeat,working_directory = working_directory)    
                          		             
                     if(not params):
@@ -1060,20 +1062,58 @@ def run_include_testsets(testsets1,myworkflow,global_generators,command_args = N
                     global is_retried
                     is_retried = False
                     #print "\n ============================================================= \n"
-
+                
                     
-	            if result is not None:
-		        test_result[test.name.strip()]['result'] = result.passed
-		        if not result.passed:
-		            test_result[test.name.strip()]['status'] = result.response_headers[3][1]
-		            test_result[test.name.strip()]['expected_status'] = test.expected_status
 
-	            if result is None:
-		        skip += 1
-		        test_result[test.name.strip()]['result'] = "skip"
-		        test_result[test.name.strip()]['depends_on'] = test.depends_on
-		        continue
+                    if result is not None:                       
+                        #pdb.set_trace()
+                        if result.test.display_name is not None:
+                            test_result_out[result.test._display_name.strip()]['result'] = result.passed
+                            #pdb.set_trace()
+                            if not result.passed:
+                                if hasattr(result, 'failures'):
+                                    error_str = ''.join(str(e) for e in result.failures)
+                                    test_result_out[result.test._display_name.strip()]['error_msg'] = error_str
+#                                if 'body' in json.loads(result.__str__()).keys():
+#                                    test_result[test.name.strip()]['body'] = result.body 
+                        else:
+                            test_result_out[test.name.strip()]['result'] = result.passed
+                            if not result.passed:
+                                if hasattr(result, 'failures'):
+                                    error_str = ''.join(str(e) for e in result.failures)
+                                    test_result_out[test.name.strip()]['error_msg'] = error_str
+#                                if 'body' in json.loads(result.__str__()).keys():
+#                                    test_result[test.name.strip()]['body'] = result.body
+                                
+ 
+                    if result is None:
+                        skip += 1
+                        if result.test._display_name is not None:
+                            test_result_out[result.test._display_name.strip()]['result'] = "skip"
+                            test_result_out[result.test._display_name.strip()]['depends_on'] = test.depends_on
+                        else:
+                            test_result_out[test.name.strip()]['result'] = "skip"
+                            test_result_out[test.name.strip()]['depends_on'] = test.depends_on
+                        continue
 
+
+
+                    if result is not None:
+                        pdb.set_trace()
+                        test_result[test.name.strip()]['result'] = result.passed
+                        if not result.passed:
+                            if hasattr(result, 'failures'):
+                                error_str = ''.join(str(e) for e in result.failure)
+                                test_result[test.name.strip()]['error_msg'] = error_str
+                            test_result[test.name.strip()]['expected_status'] = test.expected_status
+
+                    if result is None:
+		                skip += 1
+		                test_result[test.name.strip()]['result'] = "skip"
+		                test_result[test.name.strip()]['depends_on'] = test.depends_on
+		                continue
+
+                
 	            result.body = None  # Remove the body, save some memory!
 	            if not result.passed:  # Print failure, increase failure counts for that test group
 	               # Use result test URL to allow for templating
@@ -1137,7 +1177,7 @@ def run_include_testsets(testsets1,myworkflow,global_generators,command_args = N
               .format(group, passfail[failures == 0], str(test_count - failures), str(test_count), str(skip)) 
 
         with open('test_result.json', 'w') as out:
-            json.dump(test_result, out, indent=4)
+            json.dump(test_result_out, out, indent=4)
 
        
         if command_args['skip_term_colors']:
@@ -1185,7 +1225,6 @@ def run_testsets(testsets):
     ssl_insecure=True
     curl_handle = pycurl.Curl()
     
-    
     for testset in testsets:
         mytests = testset.tests
         myconfig = testset.config
@@ -1199,7 +1238,7 @@ def run_testsets(testsets):
         if myconfig.generators:
             for key, value in myconfig.generators.items():
                 context.add_generator(key, value)
-        
+
         # Make sure we actually have tests to execute
         if not mytests and not mybenchmarks:
             # no tests in this test set, probably just imports.. skip to next
@@ -1222,11 +1261,20 @@ def run_testsets(testsets):
             
             
             result = run_test(test, test_config=myconfig, context=context, curl_handle=curl_handle)
-            
             if result is not None:
+                #pdb.set_trace()
                 test_result[test.name]['result'] = result.passed
                 if not result.passed:
-                    test_result[test.name]['status'] = result.response_headers[3][1]
+                    if hasattr(result, 'failures'):
+                        error_str = ''.join(str(e) for e in result.failures) 
+                        test_result[test.name.strip()]['error_msg'] = error_str
+                    #if 'body' in json.loads(result.__str__()).keys():
+                    #    test_result[test.name.strip()]['body'] = result.body
+                    #    if 'details' in json.loads(result.__str__())['body'].keys():
+                    #        test_result[test.name.strip()]['details'] = result.body.details
+                    #if 'details' in json.loads(result.__str__()).keys():
+                    #    pdb.set_trace()
+                    #    test_result[test.name.strip()]['details'] = json.loads(result.__str__())['details']
                     test_result[test.name]['expected_status'] = test.expected_status
 
             if result is None:
