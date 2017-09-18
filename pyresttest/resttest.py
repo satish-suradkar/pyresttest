@@ -1098,7 +1098,7 @@ def run_include_testsets(testsets1,myworkflow,global_generators,command_args = N
                         test_result[test.name.strip()]['result'] = result.passed
                         if not result.passed:
                             if hasattr(result, 'failures'):
-                                error_str = ''.join(str(e) for e in result.failure)
+                                error_str = ''.join(str(e) for e in result.failures)
                                 test_result[test.name.strip()]['error_msg'] = error_str
                             test_result[test.name.strip()]['expected_status'] = test.expected_status
 
