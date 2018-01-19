@@ -659,20 +659,23 @@ def run_test(mytest, test_config=TestConfig(), context=None, curl_handle=None,re
             validate_result = validator.validate(
                     body=body, headers=head, context=my_context)
             if not validate_result:
-                if(mytest.retries):
-                    retry -= 1
-                    #retry from test
-                    if flag == 1:
-                        mytest.retries = retry
-                        time.sleep(mytest.delay)
-                        return run_test(mytest, test_config, context, curl_handle,working_directory=working_directory)
+                if hasattr(validate_result, 'skip_retries') and validate_result.skip_retries == False:
+                    if hasattr(validate_result, 'retry_for_pending') and validate_result.retry_for_pending:
+                        mytest.retries = 1
+                        retry = 1
+                    if(mytest.retries):
+                        retry -= 1
+                        #retry from test
+                        if flag == 1:
+                            mytest.retries = retry
+                            time.sleep(mytest.delay)
+                            return run_test(mytest, test_config, context, curl_handle,working_directory=working_directory)
 
-                    #retry from config 
-                    if flag == 2:
-                        print(result.body)
-                        test_config.retries = retry
-                        time.sleep(test_config.delay)
-                        return run_test(mytest, test_config, context, curl_handle,working_directory=working_directory)
+                        #retry from config
+                        if flag == 2:
+                            test_config.retries = retry
+                            time.sleep(test_config.delay)
+                            return run_test(mytest, test_config, context, curl_handle,working_directory=working_directory)
 
                 result.passed = False
             else:

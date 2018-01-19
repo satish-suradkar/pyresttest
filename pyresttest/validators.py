@@ -143,6 +143,8 @@ class Failure(object):
     failure_type = None
     details = None
     validator = None
+    skip_retries = False
+    retry_for_pending = False
 
     def __nonzero__(self):
         """ Failure objects test as False, simplifies coding with them """
@@ -155,11 +157,13 @@ class Failure(object):
     def __str__(self):
         return self.message
 
-    def __init__(self, message="", details="", failure_type=None, validator=None):
+    def __init__(self, message="", details="", failure_type=None, validator=None, skip_retries=False, retry_for_pending=False):
         self.message = message
         self.details = details
         self.validator = validator
         self.failure_type = failure_type
+        self.skip_retries = skip_retries
+        self.retry_for_pending = retry_for_pending
 
 
 class AbstractExtractor(object):
@@ -382,6 +386,21 @@ class ComparatorValidator(AbstractValidator):
         if isinstance(extracted_val, binary_type) and isinstance(expected_val, text_type):
             expected_val = expected_val.encode('utf-8')
         comparison = self.comparator(extracted_val, expected_val)
+
+        if expected_val == 'Success' and extracted_val == 'Failure' or expected_val == 'Failure' and extracted_val == 'Success':
+            failure = Failure(validator=self)
+            failure.message = "job status is unexpected"
+            failure.failure_type = FAILURE_VALIDATOR_FAILED
+            failure.skip_retries = True
+            return failure
+        
+        if expected_val == 'Success' and extracted_val == 'Pending' or expected_val == 'Failure' and extracted_val == 'Pending':
+            failure = Failure(validator=self)
+            failure.message = "job status is Pending"
+            failure.failure_type = FAILURE_VALIDATOR_FAILED
+            failure.retry_for_pending = True
+            return failure
+
 
         if not comparison:
             failure = Failure(validator=self)
