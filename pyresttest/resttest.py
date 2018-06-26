@@ -26,6 +26,7 @@ params_flag=0
 is_retried = False #flag to check test is already retried
 final_success = 0
 final_fail = 0
+global_var_workflow = {}
 
 
 try:
@@ -967,6 +968,7 @@ def run_include_testsets(testsets1,myworkflow,global_generators,command_args = N
     depends_list=list()
     exit_flag = False    
     succeeded_test_count = 0
+    context.variables.update(global_var_workflow)
     context.__setattr__('generator_binds',generator_binds)
         
     if(command_args.has_key("I")):
@@ -1207,7 +1209,7 @@ def run_include_testsets(testsets1,myworkflow,global_generators,command_args = N
             else:
                 print('\033[92m' + out_string + '\033[0m')
             
-                           
+    global_var_workflow.update(context.variables)                       
     if(total_failures > 0):
         return False       
     else:
